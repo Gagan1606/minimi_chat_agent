@@ -15,10 +15,12 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint src test",
     "test": "tsx --test test/**/*.test.ts",
-    "format": "prettier --write src test *.json compose.yaml .github/workflows/ci.yml README.md eslint.config.js infra/local/keycloak/momos-demo-realm.json docs/api docs/data-model.md",
-    "format:check": "prettier --check src test *.json compose.yaml .github/workflows/ci.yml README.md eslint.config.js infra/local/keycloak/momos-demo-realm.json docs/api docs/data-model.md",
+    "format": "prettier --write src test eval tests/load ops/runbooks docs/release *.json compose.yaml .github/workflows/ci.yml README.md eslint.config.js infra/local/keycloak/momos-demo-realm.json docs/api docs/data-model.md",
+    "format:check": "prettier --check src test eval tests/load ops/runbooks docs/release *.json compose.yaml .github/workflows/ci.yml README.md eslint.config.js infra/local/keycloak/momos-demo-realm.json docs/api docs/data-model.md",
     "providers:smoke": "tsx src/providers/smoke.ts",
-    "tavily:smoke": "tsx src/providers/tavily-smoke.ts"
+    "tavily:smoke": "tsx src/providers/tavily-smoke.ts",
+    "eval:staging": "node eval/run.mjs",
+    "load:staging": "node tests/load/workspace-chat.mjs"
   },
   "dependencies": {
     "@google/genai": "^3.6.1",
