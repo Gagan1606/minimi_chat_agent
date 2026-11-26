@@ -10,6 +10,7 @@ import { createTavilyWebSearch } from "./providers/tavily.js";
 import { createGeminiEmbeddingProvider } from "./providers/embedding/gemini.js";
 import { createQdrantVectorStore } from "./providers/vector-store/qdrant.js";
 import { createHybridHistoryRetriever } from "./modules/retrieval/history.js";
+import { createWorkspaceHistoryRetriever } from "./modules/retrieval/workspace-scope/index.js";
 import { createEmbeddingIndexer } from "./workers/embedding-indexer/index.js";
 import type { MetricsPort } from "./shared/providers/contracts/index.js";
 
@@ -40,6 +41,7 @@ async function start(): Promise<void> {
     const answerProvider = createSourcedAnswerProvider({ model, search });
     const retrievalConfig = readRetrievalConfig(process.env);
     let historyRetriever;
+    let workspaceHistoryRetriever;
     let indexer: ReturnType<typeof createEmbeddingIndexer> | undefined;
     if (retrievalConfig) {
       const retrievalMetrics = createRetrievalMetrics();
@@ -55,6 +57,12 @@ async function start(): Promise<void> {
         );
       }
       historyRetriever = createHybridHistoryRetriever({
+        pool: appPool,
+        embeddings,
+        vectorStore,
+        metrics: retrievalMetrics,
+      });
+      workspaceHistoryRetriever = createWorkspaceHistoryRetriever({
         pool: appPool,
         embeddings,
         vectorStore,
@@ -76,6 +84,7 @@ async function start(): Promise<void> {
       model,
       answerProvider,
       ...(historyRetriever ? { historyRetriever } : {}),
+      ...(workspaceHistoryRetriever ? { workspaceHistoryRetriever } : {}),
       adminStatus: {
         model: process.env.MODEL_API_KEY?.trim()
           ? "configured"

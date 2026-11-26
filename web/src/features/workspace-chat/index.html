@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Workspace chat · Momos</title>
+    <link rel="stylesheet" href="/workspace-chat/chat.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Workspace chat</h1>
+      <p class="notice">
+        Workspace messages may inform answers for teammates in this workspace.
+        Message authors are not identified. Teammates cannot browse your chat
+        transcript.
+      </p>
+      <label for="workspace-id">Workspace ID</label
+      ><input
+        id="workspace-id"
+        autocomplete="off"
+        aria-describedby="workspace-help"
+      /><small id="workspace-help"
+        >Use the workspace ID provided by your Company Admin.</small
+      >
+      <ol id="messages" aria-live="polite"></ol>
+      <form id="composer">
+        <label for="prompt">Message</label
+        ><textarea id="prompt" maxlength="10000" required></textarea
+        ><button type="submit">Send</button>
+      </form>
+      <p id="status" role="status"></p>
+    </main>
+    <script type="module" src="/workspace-chat/chat.js"></script>
+  </body>
+</html>

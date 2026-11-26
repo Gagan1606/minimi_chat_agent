@@ -39,7 +39,7 @@ export function createEmbeddingIndexer(options: {
            JOIN conversation c ON c.id=m.conversation_id
            WHERE ((o.state IN ('pending','failed') AND o.available_at<=now() AND o.attempts<$2)
              OR (o.state='processing' AND o.claimed_at<now()-interval '2 minutes'))
-             AND c.scope='personal'
+             AND c.scope IN ('personal','workspace')
            ORDER BY o.available_at,o.created_at FOR UPDATE SKIP LOCKED LIMIT $1
          )
          UPDATE embedding_outbox o SET state='processing',claimed_at=now(),attempts=o.attempts+1
@@ -65,7 +65,7 @@ export function createEmbeddingIndexer(options: {
            c.scope,COALESCE(c.workspace_id,c.owner_person_id) AS scope_id,m.created_at
          FROM embedding_outbox o JOIN message m ON m.id=o.message_id
          JOIN conversation c ON c.id=m.conversation_id
-         WHERE o.id=ANY($1::uuid[]) AND c.scope='personal'`,
+         WHERE o.id=ANY($1::uuid[]) AND c.scope IN ('personal','workspace')`,
         [ids],
       );
       await client.query("COMMIT");
