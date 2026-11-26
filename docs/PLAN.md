@@ -12,7 +12,7 @@ This plan turns [`SPEC.md`](SPEC.md) and [`DESIGN.md`](DESIGN.md) into deployabl
 - Each milestone owns only the paths, routes, and tables listed below. Shared files, types, route registration, migrations, and contracts are owned by M1/M2 and are changed later only through a sequential contract/migration milestone.
 
 ## Milestones
-  
+
 ### M1 — Walking skeleton
 
 - **Goal:** A minimal Momos service is built by CI, connected to PostgreSQL, authenticated through OIDC, health checked, and deployed to staging.
@@ -106,7 +106,7 @@ This plan turns [`SPEC.md`](SPEC.md) and [`DESIGN.md`](DESIGN.md) into deployabl
 - **Depends on:** M1, M2, M3, M4, M5, M7.
 - **Wave:** 6.
 - **Parallel-safe with:** none. It extends the same chat, message, retrieval, and context-assembly paths as M4/M5/M7; any concurrent edit could leak data or conflict on these tables/contracts.
-- **Owns:** `src/modules/chat/workspace/**`, `src/modules/retrieval/workspace-scope/**`, `web/src/features/workspace-chat/**`, and `tests/workspace-privacy/**`. Reads/writes existing `Conversation`/`Message` under workspace predicates and `WorkspaceMembership`; no schema change without a separate sequential migration/contract milestone.
+- **Owns:** `src/modules/chat/workspace/**`, `src/modules/retrieval/workspace-scope/**`, `web/src/features/workspace-chat/**`, and `test/workspace-chat.integration.test.ts`. The required composition wiring is also owned by M8 and may touch only the workspace-specific imports/dependency injection/static asset map in `src/app.ts` and `src/index.ts`, plus the scope predicate in `src/workers/embedding-indexer/**` so workspace messages enter the already-defined outbox. No personal-chat behavior, shared contracts, route registry, or schema/migration changes are allowed; reads/writes existing `Conversation`/`Message` under workspace predicates and `WorkspaceMembership`.
 - **Contracts consumed / produced:** Consumes M2 role/scope/context DTO, M3 membership policy, M4/M5 chat pipeline, and M7 retrieval port. Produces workspace chat behavior that applies the required de-identification transform.
 
 ### M9 — Complete deletion and retention lifecycle
@@ -159,16 +159,16 @@ flowchart TD
 
 ### Wave schedule
 
-| Wave | Milestones | Why these may share a wave | Sequential integration checkpoint |
-|---|---|---|---|
-| 1 | M1 | Foundation has no dependency. | I1: deploy the walking skeleton; verify CI, OIDC, health, database migration and rollback. |
-| 2 | M2 | Contracts/schema are deliberately alone so nothing consumes a moving contract. | I2: merge and deploy the complete API/schema contract; contract/migration tests must pass before split. |
-| 3 | M3 + M4 | Separate directories/routes/UI modules and separate tables; shared auth, schema, route registration, and event formats are frozen in M2. Neither edits shared files or migrations. | I3: merge both, deploy, run admin and personal-chat E2E, then verify tenant boundary and migration compatibility. |
-| 4 | M5 + M6 | M5 owns chat-answer/provider/citation modules and chat tables. M6 owns admin routes/UI and read-only metrics/event consumers; it does not query chat tables or alter M5 files. Metrics, event, health, and admin API ports are frozen in M2. | I4: merge both, deploy, run sourced-answer, admin-role/event, and cross-role visibility E2E. Confirm M5 metrics feed M6 through the agreed port. |
-| 5 | M7 | Vector indexing and hybrid retrieval change the chat ingestion/context path; isolate and integrate before team context. | I5: verify outbox, vector fallback, privacy DTO, and personal semantic recall on staging. |
-| 6 | M8 | Team context changes the same retrieval and chat context path as M7; keep sequential. | I6: run two-workspace/two-user privacy E2E and inspect model-input canaries. |
-| 7 | M9 | Deletion/retention changes the same records and indexes as M4/M7/M8. | I7: demonstrate immediate logical deletion, asynchronous physical cleanup, backup expiry, and restore handling. |
-| 8 | M10 | Release gate depends on every deployed slice. | I8: sequential release rehearsal, full regression, load/recovery evidence, and release-candidate demo. |
+| Wave | Milestones | Why these may share a wave                                                                                                                                                                                                                   | Sequential integration checkpoint                                                                                                                |
+| ---- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1    | M1         | Foundation has no dependency.                                                                                                                                                                                                                | I1: deploy the walking skeleton; verify CI, OIDC, health, database migration and rollback.                                                       |
+| 2    | M2         | Contracts/schema are deliberately alone so nothing consumes a moving contract.                                                                                                                                                               | I2: merge and deploy the complete API/schema contract; contract/migration tests must pass before split.                                          |
+| 3    | M3 + M4    | Separate directories/routes/UI modules and separate tables; shared auth, schema, route registration, and event formats are frozen in M2. Neither edits shared files or migrations.                                                           | I3: merge both, deploy, run admin and personal-chat E2E, then verify tenant boundary and migration compatibility.                                |
+| 4    | M5 + M6    | M5 owns chat-answer/provider/citation modules and chat tables. M6 owns admin routes/UI and read-only metrics/event consumers; it does not query chat tables or alter M5 files. Metrics, event, health, and admin API ports are frozen in M2. | I4: merge both, deploy, run sourced-answer, admin-role/event, and cross-role visibility E2E. Confirm M5 metrics feed M6 through the agreed port. |
+| 5    | M7         | Vector indexing and hybrid retrieval change the chat ingestion/context path; isolate and integrate before team context.                                                                                                                      | I5: verify outbox, vector fallback, privacy DTO, and personal semantic recall on staging.                                                        |
+| 6    | M8         | Team context changes the same retrieval and chat context path as M7; keep sequential.                                                                                                                                                        | I6: run two-workspace/two-user privacy E2E and inspect model-input canaries.                                                                     |
+| 7    | M9         | Deletion/retention changes the same records and indexes as M4/M7/M8.                                                                                                                                                                         | I7: demonstrate immediate logical deletion, asynchronous physical cleanup, backup expiry, and restore handling.                                  |
+| 8    | M10        | Release gate depends on every deployed slice.                                                                                                                                                                                                | I8: sequential release rehearsal, full regression, load/recovery evidence, and release-candidate demo.                                           |
 
 **Ownership-conflict check:** The only parallel waves are 3 and 4. In Wave 3, M3 writes tenant/membership/audit tables and tenancy paths; M4 writes conversation/message/citation/idempotency/rate-event tables and personal chat paths. In Wave 4, M5 writes chat answer/citation/provider paths and M6 reads event/metrics ports in its own admin paths. Both pairs have no shared writable file, migration, table, route registry, or type. Each agent tests against the frozen M2 contracts and fixtures; integration happens after both finish. Any discovered need to change a shared contract or table pauses the affected wave and creates a sequential contract/migration change before work resumes.
 
@@ -190,44 +190,44 @@ At each checkpoint I1–I8, the primary integrator merges only completed milesto
 
 ## 4. Coverage map
 
-| Requirement | Assigned milestone(s) | Evidence/gate |
-|---|---|---|
-| FR-1 personal and workspace chat | M4, M8 | Personal and team chat E2E |
-| FR-2 responsive browser chat, TypeScript/Node | M1, M4 | Deployed shell and responsive chat E2E |
-| FR-3 persistent history requires OIDC | M1 | OIDC/session tests; anonymous history denied |
-| FR-4 owner-only personal history | M4, M9 | Cross-user read/recall/delete denial |
-| FR-5 one company/workspace membership | M2, M3 | Schema constraints and concurrent membership tests |
-| FR-6 one designated Company/Workspace Admin and assignment scope | M2, M3 | Admin role/tenant matrix tests |
-| FR-7 workspace context only; content+timestamp; never identify author | M7, M8 | Context DTO schema and privacy canary E2E |
-| FR-8 no personal/cross-workspace context | M8 | Cross-scope retrieval tests |
-| FR-9 replaceable model/search/identity/hosting/storage integrations | M1, M2, M4, M5, M7 | Adapter contract tests and config-driven provider selection |
-| FR-10 web search is only agent tool; recall is internal service | M4, M5, M7 | Tool inventory and history retrieval tests |
-| FR-11 citations, IST check/publication dates, uncertainty | M5 | Citation/date/conflict/failure tests |
-| FR-12 scoped full-text/date/vector history search | M2, M7, M8 | Exact/semantic/date and scope tests |
-| FR-13 only relevant snippets sent to model | M4, M7, M8 | Prompt/context payload assertions |
-| FR-14 UTC storage, IST display, clarify ambiguity | M4, M5, M8 | Timezone and ambiguity tests |
-| FR-15 delete one/all from active and keyword/vector indexes | M4, M7, M9 | Database/index/outbox/retrieval side-effect tests |
-| FR-16 encrypted daily backups, max 30-day retention | M1, M9, M10 | Backup config, retention and restore evidence |
-| FR-17 admin scopes, dashboards, health/usage/security/rate events | M3, M6 | Role-specific dashboard E2E |
-| FR-18 only Platform Admin sees detailed events | M6 | Forbidden-role and tenant tests |
-| FR-19 event metadata excludes conversation content | M2, M4, M6 | Event schema and log/data inspection |
-| FR-20 validation and bound SQL | M2, M3, M4, M5, M7, M8 | Invalid-input/security tests for every endpoint |
-| FR-21 TLS/cookies/CSRF and operation rate limits | M1, M4, M6 | Session/CSRF/rate-limit tests and TLS staging check |
-| FR-22 content/secret-free logs and minimized provider retention | M1, M4–M10 | Log canaries and provider configuration review |
-| FR-23 `.env.example` and no committed keys | M1, M2, M10 | Config schema, repository secret scan |
-| FR-24 no payments or regulated-data MVP support | M1–M10 | Scope checks during review; no payment/regulated-data feature |
-| FR-25 assessment coverage and repeatable evaluation | M10 | Evaluation report and harness |
-| FR-26 JSON chat/history/delete/admin API, pagination and limits | M2, M3, M4, M6, M9 | API contract and endpoint tests |
-| FR-27 Platform Admin creates company; Company Admin invites/assigns | M3 | Provisioning workflow E2E |
-| NFR: Chat p95 ≤10s | M4, M5, M7, M8, M10 | Staged ordinary-search and context-load percentiles |
-| NFR: list/detail p95 ≤500ms; delete one ≤1s/all ≤2s | M4, M9, M10 | Endpoint latency tests with representative history size |
-| NFR: admin overview ≤1s; detailed events ≤500ms; admin mutations ≤1s | M3, M6, M10 | Admin endpoint latency tests |
-| NFR: 10 chat RPS sustained, 20 RPS/30s burst, ≤100 in-flight | M4, M5, M7, M8, M10 | Progressive load tests, final full profile in M10 |
-| NFR: 99.5% monthly availability | M1, M6, M10 | Health/alerts/dependency dashboards and release SLO runbook |
-| NFR: RPO 24h, RTO 8h, daily encrypted backups retained 30 days | M1, M9, M10 | Backup configuration and timed restore exercise |
-| NFR: TLS 1.2+, secure cookie, CSRF, MFA for Platform Admin, secure bootstrap | M1, M2, M3, M6, M10 | Security and auth regression suite |
-| NFR: owner/tenant isolation, privacy-safe context, no sensitive logs | M3, M4, M7, M8, M9, M10 | Authorization matrix, privacy canaries, log scans |
-| NFR: rate limits: OIDC 10/IP/15m; chat 30/user/min; reads 120/user/min; deletes 10/user/hour | M1, M4, M6 | Boundary and throttling tests; operational visibility tests |
+| Requirement                                                                                  | Assigned milestone(s)   | Evidence/gate                                                 |
+| -------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------- |
+| FR-1 personal and workspace chat                                                             | M4, M8                  | Personal and team chat E2E                                    |
+| FR-2 responsive browser chat, TypeScript/Node                                                | M1, M4                  | Deployed shell and responsive chat E2E                        |
+| FR-3 persistent history requires OIDC                                                        | M1                      | OIDC/session tests; anonymous history denied                  |
+| FR-4 owner-only personal history                                                             | M4, M9                  | Cross-user read/recall/delete denial                          |
+| FR-5 one company/workspace membership                                                        | M2, M3                  | Schema constraints and concurrent membership tests            |
+| FR-6 one designated Company/Workspace Admin and assignment scope                             | M2, M3                  | Admin role/tenant matrix tests                                |
+| FR-7 workspace context only; content+timestamp; never identify author                        | M7, M8                  | Context DTO schema and privacy canary E2E                     |
+| FR-8 no personal/cross-workspace context                                                     | M8                      | Cross-scope retrieval tests                                   |
+| FR-9 replaceable model/search/identity/hosting/storage integrations                          | M1, M2, M4, M5, M7      | Adapter contract tests and config-driven provider selection   |
+| FR-10 web search is only agent tool; recall is internal service                              | M4, M5, M7              | Tool inventory and history retrieval tests                    |
+| FR-11 citations, IST check/publication dates, uncertainty                                    | M5                      | Citation/date/conflict/failure tests                          |
+| FR-12 scoped full-text/date/vector history search                                            | M2, M7, M8              | Exact/semantic/date and scope tests                           |
+| FR-13 only relevant snippets sent to model                                                   | M4, M7, M8              | Prompt/context payload assertions                             |
+| FR-14 UTC storage, IST display, clarify ambiguity                                            | M4, M5, M8              | Timezone and ambiguity tests                                  |
+| FR-15 delete one/all from active and keyword/vector indexes                                  | M4, M7, M9              | Database/index/outbox/retrieval side-effect tests             |
+| FR-16 encrypted daily backups, max 30-day retention                                          | M1, M9, M10             | Backup config, retention and restore evidence                 |
+| FR-17 admin scopes, dashboards, health/usage/security/rate events                            | M3, M6                  | Role-specific dashboard E2E                                   |
+| FR-18 only Platform Admin sees detailed events                                               | M6                      | Forbidden-role and tenant tests                               |
+| FR-19 event metadata excludes conversation content                                           | M2, M4, M6              | Event schema and log/data inspection                          |
+| FR-20 validation and bound SQL                                                               | M2, M3, M4, M5, M7, M8  | Invalid-input/security tests for every endpoint               |
+| FR-21 TLS/cookies/CSRF and operation rate limits                                             | M1, M4, M6              | Session/CSRF/rate-limit tests and TLS staging check           |
+| FR-22 content/secret-free logs and minimized provider retention                              | M1, M4–M10              | Log canaries and provider configuration review                |
+| FR-23 `.env.example` and no committed keys                                                   | M1, M2, M10             | Config schema, repository secret scan                         |
+| FR-24 no payments or regulated-data MVP support                                              | M1–M10                  | Scope checks during review; no payment/regulated-data feature |
+| FR-25 assessment coverage and repeatable evaluation                                          | M10                     | Evaluation report and harness                                 |
+| FR-26 JSON chat/history/delete/admin API, pagination and limits                              | M2, M3, M4, M6, M9      | API contract and endpoint tests                               |
+| FR-27 Platform Admin creates company; Company Admin invites/assigns                          | M3                      | Provisioning workflow E2E                                     |
+| NFR: Chat p95 ≤10s                                                                           | M4, M5, M7, M8, M10     | Staged ordinary-search and context-load percentiles           |
+| NFR: list/detail p95 ≤500ms; delete one ≤1s/all ≤2s                                          | M4, M9, M10             | Endpoint latency tests with representative history size       |
+| NFR: admin overview ≤1s; detailed events ≤500ms; admin mutations ≤1s                         | M3, M6, M10             | Admin endpoint latency tests                                  |
+| NFR: 10 chat RPS sustained, 20 RPS/30s burst, ≤100 in-flight                                 | M4, M5, M7, M8, M10     | Progressive load tests, final full profile in M10             |
+| NFR: 99.5% monthly availability                                                              | M1, M6, M10             | Health/alerts/dependency dashboards and release SLO runbook   |
+| NFR: RPO 24h, RTO 8h, daily encrypted backups retained 30 days                               | M1, M9, M10             | Backup configuration and timed restore exercise               |
+| NFR: TLS 1.2+, secure cookie, CSRF, MFA for Platform Admin, secure bootstrap                 | M1, M2, M3, M6, M10     | Security and auth regression suite                            |
+| NFR: owner/tenant isolation, privacy-safe context, no sensitive logs                         | M3, M4, M7, M8, M9, M10 | Authorization matrix, privacy canaries, log scans             |
+| NFR: rate limits: OIDC 10/IP/15m; chat 30/user/min; reads 120/user/min; deletes 10/user/hour | M1, M4, M6              | Boundary and throttling tests; operational visibility tests   |
 
 **Unassigned requirements:** None. Exact numeric targets and evidence are recorded in the table; capacity targets are budgets, not contractual SLAs, as stated in SPEC.
 
@@ -280,4 +280,3 @@ The plan can be authored and contract work can proceed with vendor-neutral ports
 5. **Vector outage policy:** The design proposes lexical/date fallback when vectors are unavailable. Confirm whether chat should continue with reduced semantic recall or fail the request. **ASSUMPTION:** continue with lexical/date results, indicate degraded recall operationally, and do not claim semantic recall was used.
 6. **Exceptional support access and audit retention:** Who approves time-limited content access and how long are content-free audit/rate-limit events retained? **ASSUMPTION:** the content owner approves personal access; the Company Admin approves workspace access; retain content-free event records 90 days. No support content access is enabled until this is confirmed.
 7. **Rate-limit persistence:** Confirm atomic PostgreSQL counters/events or request Redis. **ASSUMPTION:** start with PostgreSQL because it is the design’s simplest default; add Redis only if measured contention requires it.
-

@@ -27,6 +27,8 @@ import {
 } from "./modules/admin/operations/routes.js";
 import type { SourcedAnswerProvider } from "./modules/chat/answers/service.js";
 import type { PersonalHistoryRetriever } from "./modules/retrieval/history.js";
+import { handleWorkspaceChatRoute } from "./modules/chat/workspace/routes.js";
+import type { createWorkspaceHistoryRetriever } from "./modules/retrieval/workspace-scope/index.js";
 
 export interface AppConfig {
   appBaseUrl: string;
@@ -51,6 +53,9 @@ export interface AppDependencies {
   model?: ModelProvider;
   answerProvider?: SourcedAnswerProvider;
   historyRetriever?: PersonalHistoryRetriever;
+  workspaceHistoryRetriever?: ReturnType<
+    typeof createWorkspaceHistoryRetriever
+  >;
   adminStatus?: AdminOperationsStatus;
 }
 
@@ -527,14 +532,31 @@ async function dispatch(
     const featureSecret = createHash("sha256")
       .update(`${config.oidcClientSecret}:feature-signing`)
       .digest("hex");
+    const chatDependencies = {
+      pool,
+      model: dependencies.model,
+      ...(dependencies.answerProvider
+        ? { answerProvider: dependencies.answerProvider }
+        : {}),
+      sessionCookieName: config.sessionCookieName,
+      modelTimeoutMs: positiveEnvironmentInteger("MODEL_TIMEOUT_MS", 10_000),
+    };
+    if (
+      await handleWorkspaceChatRoute(request, response, url, requestId, {
+        ...chatDependencies,
+        ...(dependencies.workspaceHistoryRetriever
+          ? { retriever: dependencies.workspaceHistoryRetriever }
+          : {}),
+      })
+    )
+      return;
     const handled = await handlePersonalChatRoute(
       request,
       response,
       url,
       requestId,
       {
-        pool,
-        model: dependencies.model,
+        ...chatDependencies,
         ...(dependencies.answerProvider
           ? { answerProvider: dependencies.answerProvider }
           : {}),
@@ -545,7 +567,6 @@ async function dispatch(
         cursorSigningSecret: featureSecret,
         rateLimitSecret: featureSecret,
         sessionCookieSecure: config.sessionCookieSecure,
-        modelTimeoutMs: positiveEnvironmentInteger("MODEL_TIMEOUT_MS", 10_000),
         chatLimit: positiveEnvironmentInteger("RATE_LIMIT_CHAT_MAX", 30),
         chatWindowSeconds: positiveEnvironmentInteger(
           "RATE_LIMIT_CHAT_WINDOW_SECONDS",
@@ -575,6 +596,18 @@ async function serveFeatureAsset(
   requestId: string,
 ): Promise<boolean> {
   const assets: Record<string, [string, string]> = {
+    "/workspace-chat": [
+      "web/src/features/workspace-chat/index.html",
+      "text/html; charset=utf-8",
+    ],
+    "/workspace-chat/chat.css": [
+      "web/src/features/workspace-chat/chat.css",
+      "text/css; charset=utf-8",
+    ],
+    "/workspace-chat/chat.js": [
+      "web/src/features/workspace-chat/chat.js",
+      "text/javascript; charset=utf-8",
+    ],
     "/company-admin": [
       "web/src/features/company-admin/index.html",
       "text/html; charset=utf-8",
