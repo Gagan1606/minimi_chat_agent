@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "m1-walking-skeleton"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: momos
+          POSTGRES_USER: momos
+          POSTGRES_PASSWORD: momos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U momos -d momos"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://momos:momos@localhost:5432/momos
+      MIGRATION_DATABASE_URL: postgresql://momos:momos@localhost:5432/momos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run format:check
+      - run: npm run build
+      - run: docker build -t momos:${{ github.sha }} .
