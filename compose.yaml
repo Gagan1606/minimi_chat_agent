@@ -27,5 +27,18 @@ services:
     volumes:
       - ./infra/local/keycloak/momos-demo-realm.json:/opt/keycloak/data/import/momos-demo-realm.json:ro
 
+  qdrant:
+    image: qdrant/qdrant:v1.16.2
+    ports:
+      - "127.0.0.1:${LOCAL_QDRANT_HOST_PORT:-16333}:6333"
+    volumes:
+      - momos-qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   momos-postgres-data:
+  momos-qdrant-data:

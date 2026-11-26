@@ -503,6 +503,15 @@ async function loadContext(
   message: string,
   conversationId: string,
 ): Promise<Array<{ content: string; createdAt: string }>> {
+  if (deps.historyRetriever) {
+    return [
+      ...(await deps.historyRetriever.retrieve({
+        personId,
+        conversationId,
+        query: message,
+      })),
+    ];
+  }
   const terms = message.match(/[\p{L}\p{N}]+/gu)?.slice(0, 30) ?? [];
   const tsQuery = terms.join(" | ");
   const result = await deps.pool.query<{ content: string; created_at: Date }>(
@@ -540,6 +549,11 @@ async function persistTurn(
     await client.query(
       "INSERT INTO message (id,conversation_id,role,content) VALUES ($1,$2,'user',$3),($4,$2,'assistant',$5)",
       [userMessageId, conversationId, userText, assistantMessageId, answer],
+    );
+    await client.query(
+      `INSERT INTO embedding_outbox (id,message_id,operation)
+       VALUES ($1,$2,'upsert'),($3,$4,'upsert') ON CONFLICT (message_id,operation) DO NOTHING`,
+      [randomUUID(), userMessageId, randomUUID(), assistantMessageId],
     );
     for (const citation of citations) {
       await client.query(
