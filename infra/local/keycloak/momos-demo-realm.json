@@ -1,0 +1,42 @@
+{
+  "realm": "momos-demo",
+  "enabled": true,
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "momos-local-placeholder",
+      "name": "Momos local development",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "replace-me-later",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:3000/auth/oidc/callback"],
+      "webOrigins": ["http://localhost:3000"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ],
+  "users": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "username": "platform-admin",
+      "enabled": true,
+      "email": "platform-admin@example.test",
+      "emailVerified": true,
+      "firstName": "Local",
+      "lastName": "Platform Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "local-dev-only-change-me",
+          "temporary": true
+        }
+      ],
+      "requiredActions": ["CONFIGURE_TOTP"]
+    }
+  ]
+}
