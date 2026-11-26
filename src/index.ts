@@ -39,6 +39,24 @@ async function start(): Promise<void> {
       config,
       model,
       answerProvider,
+      adminStatus: {
+        model: process.env.MODEL_API_KEY?.trim()
+          ? "configured"
+          : "not_configured",
+        webSearch: process.env.WEB_SEARCH_API_KEY?.trim()
+          ? "configured"
+          : "not_configured",
+        embeddings: process.env.EMBEDDING_API_KEY?.trim()
+          ? "configured"
+          : "not_configured",
+        vectorStore: process.env.VECTOR_STORE_URL?.trim()
+          ? "configured"
+          : "not_configured",
+        backup:
+          process.env.BACKUP_STATUS === "configured"
+            ? "configured"
+            : "not_reported",
+      },
     });
     server.once("error", () => {
       process.stderr.write('{"level":"error","event":"server_bind_failed"}\n');
