@@ -5,6 +5,8 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   createServer,
   type IncomingMessage,
@@ -16,6 +18,7 @@ import { withTransaction } from "./db/transactions.js";
 import { createRequestTraceContext } from "./observability/trace-context.js";
 import { recordRequestMetric } from "./observability/request-metrics.js";
 import type { OidcAdapter, OidcIdentity } from "./modules/auth/oidc.js";
+import { createTenancyHandler } from "./modules/tenancy/routes.js";
 
 export interface AppConfig {
   appBaseUrl: string;
@@ -50,6 +53,14 @@ const OIDC_TRANSACTION_TTL_SECONDS = 600;
 
 export function createAppServer(dependencies: AppDependencies): Server {
   const { config } = dependencies;
+  const featureSecret = createHash("sha256")
+    .update(`${config.oidcClientSecret}:feature-signing`)
+    .digest("hex");
+  const tenancyHandler = createTenancyHandler({
+    pool: dependencies.pool,
+    sessionCookieName: config.sessionCookieName,
+    rateLimitSecret: featureSecret,
+  });
   return createServer((request, response) => {
     const requestId = randomUUID();
     const incomingTraceparent = request.headers.traceparent;
@@ -66,7 +77,14 @@ export function createAppServer(dependencies: AppDependencies): Server {
     response.setHeader("x-request-id", requestId);
     response.setHeader("traceparent", trace.traceparent);
 
-    void dispatch(request, response, url, requestId, dependencies)
+    void dispatch(
+      request,
+      response,
+      url,
+      requestId,
+      dependencies,
+      tenancyHandler,
+    )
       .catch(() => {
         if (!response.headersSent) {
           sendError(
@@ -114,6 +132,7 @@ async function dispatch(
   url: URL,
   requestId: string,
   dependencies: AppDependencies,
+  tenancyHandler: ReturnType<typeof createTenancyHandler>,
 ): Promise<void> {
   const { pool, oidc, config } = dependencies;
   const path = url.pathname;
@@ -475,7 +494,63 @@ async function dispatch(
     return;
   }
 
+  if (await serveFeatureAsset(path, response, requestId)) return;
+  if (await tenancyHandler(request, response, requestId)) return;
+
   sendError(response, 404, "NOT_FOUND", "Route not found", requestId, false);
+}
+
+async function serveFeatureAsset(
+  path: string,
+  response: ServerResponse<IncomingMessage>,
+  requestId: string,
+): Promise<boolean> {
+  const assets: Record<string, [string, string]> = {
+    "/company-admin": [
+      "web/src/features/company-admin/index.html",
+      "text/html; charset=utf-8",
+    ],
+    "/company-admin/admin.css": [
+      "web/src/features/company-admin/admin.css",
+      "text/css; charset=utf-8",
+    ],
+    "/company-admin/admin.js": [
+      "web/src/features/company-admin/admin.js",
+      "text/javascript; charset=utf-8",
+    ],
+    "/workspace-admin": [
+      "web/src/features/workspace-admin/index.html",
+      "text/html; charset=utf-8",
+    ],
+    "/workspace-admin/admin.css": [
+      "web/src/features/workspace-admin/admin.css",
+      "text/css; charset=utf-8",
+    ],
+    "/workspace-admin/admin.js": [
+      "web/src/features/workspace-admin/admin.js",
+      "text/javascript; charset=utf-8",
+    ],
+  };
+  const asset = assets[path];
+  if (!asset) return false;
+  try {
+    const contents = await readFile(resolve(process.cwd(), asset[0]));
+    response.writeHead(200, {
+      "content-type": asset[1],
+      "cache-control": "no-cache",
+    });
+    response.end(contents);
+  } catch {
+    sendError(
+      response,
+      503,
+      "DEPENDENCY_UNAVAILABLE",
+      "Feature asset unavailable",
+      requestId,
+      true,
+    );
+  }
+  return true;
 }
 
 async function consumeOidcTransaction(
@@ -672,7 +747,7 @@ function applySecurityHeaders(
   response.setHeader("referrer-policy", "no-referrer");
   response.setHeader(
     "content-security-policy",
-    "default-src 'none'; frame-ancestors 'none'",
+    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
   );
   if (secureCookie)
     response.setHeader(
