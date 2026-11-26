@@ -43,7 +43,7 @@ async function refreshCsrf() {
   csrfToken = session.csrfToken;
 }
 
-function showMessage(role, content, createdAt) {
+function showMessage(role, content, createdAt, citations = []) {
   const item = document.createElement("li");
   item.className = `message ${role}`;
   item.append(document.createTextNode(content));
@@ -56,6 +56,47 @@ function showMessage(role, content, createdAt) {
       timeZone: "Asia/Kolkata",
     }).format(new Date(createdAt));
     item.append(time);
+  }
+  if (role === "assistant" && Array.isArray(citations) && citations.length) {
+    const sourceList = document.createElement("ul");
+    sourceList.className = "message-citations";
+    sourceList.setAttribute("aria-label", "Sources");
+    for (const citation of citations) {
+      let url;
+      try {
+        url = new URL(citation.url);
+      } catch {
+        continue;
+      }
+      if (url.protocol !== "https:" && url.protocol !== "http:") continue;
+      const source = document.createElement("li");
+      const link = document.createElement("a");
+      link.href = url.href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = citation.title || url.hostname;
+      source.append(link);
+      const checked = document.createElement("time");
+      checked.dateTime = citation.accessedAt;
+      checked.textContent = ` · checked ${new Intl.DateTimeFormat("en-IN", {
+        dateStyle: "medium",
+        timeZone: "Asia/Kolkata",
+      }).format(new Date(citation.accessedAt))} IST`;
+      source.append(checked);
+      if (citation.publishedAt) {
+        const published = document.createElement("span");
+        published.textContent = ` · published ${new Intl.DateTimeFormat(
+          "en-IN",
+          {
+            dateStyle: "medium",
+            timeZone: "Asia/Kolkata",
+          },
+        ).format(new Date(citation.publishedAt))} IST`;
+        source.append(published);
+      }
+      sourceList.append(source);
+    }
+    if (sourceList.childElementCount) item.append(sourceList);
   }
   messages.append(item);
   messages.scrollTop = messages.scrollHeight;
@@ -92,7 +133,12 @@ async function openConversation(id) {
     currentConversationId = detail.id;
     messages.replaceChildren();
     for (const message of detail.messages)
-      showMessage(message.role, message.content, message.createdAt);
+      showMessage(
+        message.role,
+        message.content,
+        message.createdAt,
+        message.citations,
+      );
     deleteCurrent.hidden = false;
     renderConversationList();
     setStatus("");
@@ -134,7 +180,7 @@ composer.addEventListener("submit", async (event) => {
       }),
     });
     currentConversationId = result.conversationId;
-    showMessage("assistant", result.answer, result.createdAt);
+    showMessage("assistant", result.answer, result.createdAt, result.citations);
     deleteCurrent.hidden = false;
     await loadConversations();
     setStatus("");

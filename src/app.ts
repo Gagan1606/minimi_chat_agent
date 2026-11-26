@@ -21,6 +21,7 @@ import type { OidcAdapter, OidcIdentity } from "./modules/auth/oidc.js";
 import { createTenancyHandler } from "./modules/tenancy/routes.js";
 import { handlePersonalChatRoute } from "./modules/chat/personal/routes.js";
 import type { ModelProvider } from "./providers/types.js";
+import type { SourcedAnswerProvider } from "./modules/chat/answers/service.js";
 
 export interface AppConfig {
   appBaseUrl: string;
@@ -43,6 +44,7 @@ export interface AppDependencies {
   oidc: OidcAdapter;
   config: AppConfig;
   model?: ModelProvider;
+  answerProvider?: SourcedAnswerProvider;
 }
 
 interface OidcTransaction {
@@ -511,6 +513,9 @@ async function dispatch(
       {
         pool,
         model: dependencies.model,
+        ...(dependencies.answerProvider
+          ? { answerProvider: dependencies.answerProvider }
+          : {}),
         sessionCookieName: config.sessionCookieName,
         cursorSigningSecret: featureSecret,
         rateLimitSecret: featureSecret,

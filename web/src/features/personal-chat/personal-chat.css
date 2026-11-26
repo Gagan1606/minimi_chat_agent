@@ -156,6 +156,23 @@ h1 {
   font-size: 0.7rem;
   opacity: 0.7;
 }
+.message-citations {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  font-size: 0.78rem;
+}
+.message-citations a {
+  color: #3458d4;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+.message-citations time,
+.message-citations span {
+  display: inline;
+  margin: 0;
+  font-size: inherit;
+  opacity: 0.75;
+}
 #composer {
   border: 1px solid #cbd5e1;
   border-radius: 15px;
