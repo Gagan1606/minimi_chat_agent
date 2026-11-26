@@ -724,6 +724,11 @@ test("single and all-history deletion tombstone only the authenticated owner’s
   assert.ok(
     deletedRows.rows.every((row) => row.status === "deleted" && row.deleted_at),
   );
+  const deleteOutbox = await pool.query<{ count: string }>(
+    "SELECT count(*)::text AS count FROM embedding_outbox WHERE message_id IN (SELECT id FROM message WHERE conversation_id=$1) AND operation='delete' AND state IN ('pending','failed','processing','completed')",
+    [first.conversationId],
+  );
+  assert.equal(deleteOutbox.rows[0]?.count, "2");
   const repeatDelete = await fetch(
     `${context.baseUrl}/api/v1/conversations/${first.conversationId}`,
     { method: "DELETE", headers: context.headers(owner) },
@@ -767,6 +772,11 @@ test("single and all-history deletion tombstone only the authenticated owner’s
   });
   assert.equal(deleteAll.status, 200);
   assert.deepEqual(await deleteAll.json(), { deletedCount: 1 });
+  const allDeleteOutbox = await pool.query<{ count: string }>(
+    "SELECT count(*)::text AS count FROM embedding_outbox WHERE message_id IN (SELECT id FROM message WHERE conversation_id=$1) AND operation='delete'",
+    [second.conversationId],
+  );
+  assert.equal(allDeleteOutbox.rows[0]?.count, "2");
   const states = await pool.query<{
     id: string;
     scope: string;

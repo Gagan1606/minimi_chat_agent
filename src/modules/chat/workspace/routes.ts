@@ -1,4 +1,9 @@
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Pool } from "pg";
 import { ChatRequestSchema } from "../../../contracts/v1/index.js";
@@ -6,6 +11,10 @@ import type { ModelProvider } from "../../../providers/types.js";
 import type { SourcedAnswerProvider } from "../answers/service.js";
 import type { createWorkspaceHistoryRetriever } from "../../retrieval/workspace-scope/index.js";
 import { withTransaction } from "../../../db/transactions.js";
+import {
+  deleteAllWorkspaceHistory,
+  deleteWorkspaceConversation,
+} from "../../history/personal/service.js";
 
 type Retriever = ReturnType<typeof createWorkspaceHistoryRetriever>;
 export async function handleWorkspaceChatRoute(
@@ -20,12 +29,21 @@ export async function handleWorkspaceChatRoute(
     retriever?: Retriever;
     sessionCookieName: string;
     modelTimeoutMs: number;
+    rateLimitSecret?: string;
+    deleteLimit?: number;
+    deleteWindowSeconds?: number;
   },
 ): Promise<boolean> {
-  const match = url.pathname.match(
+  const chatMatch = url.pathname.match(
     /^\/api\/v1\/workspaces\/([0-9a-f-]{36})\/chat$/i,
   );
-  if (!match) return false;
+  const historyMatch = url.pathname.match(
+    /^\/api\/v1\/workspaces\/([0-9a-f-]{36})\/history$/i,
+  );
+  const deleteMatch = url.pathname.match(
+    /^\/api\/v1\/workspaces\/([0-9a-f-]{36})\/conversations\/([0-9a-f-]{36})$/i,
+  );
+  if (!chatMatch && !historyMatch && !deleteMatch) return false;
   const send = (status: number, body: unknown) => {
     response.writeHead(status, {
       "content-type": "application/json; charset=utf-8",
@@ -33,7 +51,11 @@ export async function handleWorkspaceChatRoute(
     });
     response.end(JSON.stringify(body));
   };
-  if (request.method !== "POST") {
+  if (
+    (chatMatch && request.method !== "POST") ||
+    (historyMatch && request.method !== "DELETE") ||
+    (deleteMatch && request.method !== "DELETE")
+  ) {
     send(405, {
       error: {
         code: "METHOD_NOT_ALLOWED",
@@ -45,7 +67,8 @@ export async function handleWorkspaceChatRoute(
     return true;
   }
   try {
-    const workspaceId = match[1]!;
+    const workspaceId = chatMatch?.[1] ?? historyMatch?.[1] ?? deleteMatch?.[1];
+    if (!workspaceId) return false;
     const cookies = Object.fromEntries(
       (request.headers.cookie ?? "")
         .split(";")
@@ -119,6 +142,57 @@ export async function handleWorkspaceChatRoute(
           retryable: false,
         },
       });
+      return true;
+    }
+    if (
+      (historyMatch || deleteMatch) &&
+      !(await allowWorkspaceDelete(
+        deps.pool,
+        actor.person_id,
+        workspaceId,
+        url.pathname,
+        requestId,
+        deps.rateLimitSecret ?? deps.sessionCookieName,
+        deps.deleteLimit ?? 10,
+        deps.deleteWindowSeconds ?? 3600,
+      ))
+    ) {
+      send(429, {
+        error: {
+          code: "RATE_LIMITED",
+          message: "Too many requests",
+          requestId,
+          retryable: true,
+        },
+      });
+      return true;
+    }
+    if (historyMatch) {
+      const deletedCount = await deleteAllWorkspaceHistory(
+        deps.pool,
+        actor.person_id,
+        workspaceId,
+      );
+      send(200, { deletedCount });
+      return true;
+    }
+    if (deleteMatch) {
+      const deleted = await deleteWorkspaceConversation(
+        deps.pool,
+        actor.person_id,
+        workspaceId,
+        deleteMatch[2]!,
+      );
+      if (!deleted)
+        send(404, {
+          error: {
+            code: "NOT_FOUND",
+            message: "Conversation not found",
+            requestId,
+            retryable: false,
+          },
+        });
+      else send(200, { id: deleteMatch[2], deleted: true });
       return true;
     }
     const chunks: Buffer[] = [];
@@ -276,6 +350,32 @@ export async function handleWorkspaceChatRoute(
       });
   }
   return true;
+}
+
+async function allowWorkspaceDelete(
+  pool: Pool,
+  personId: string,
+  workspaceId: string,
+  route: string,
+  requestId: string,
+  secret: string,
+  limit: number,
+  windowSeconds: number,
+): Promise<boolean> {
+  const keyHash = createHmac("sha256", secret)
+    .update(`momos:workspace-delete:${personId}:${workspaceId}`)
+    .digest("hex");
+  const result = await pool.query<{ request_count: number }>(
+    `INSERT INTO auth_rate_limit_bucket(key_hash,window_started_at,request_count,expires_at) VALUES($1,now(),1,now()+($2*interval '1 second')) ON CONFLICT(key_hash) DO UPDATE SET window_started_at=CASE WHEN auth_rate_limit_bucket.expires_at<=now() THEN now() ELSE auth_rate_limit_bucket.window_started_at END,request_count=CASE WHEN auth_rate_limit_bucket.expires_at<=now() THEN 1 ELSE auth_rate_limit_bucket.request_count+1 END,expires_at=CASE WHEN auth_rate_limit_bucket.expires_at<=now() THEN now()+($2*interval '1 second') ELSE auth_rate_limit_bucket.expires_at END RETURNING request_count`,
+    [keyHash, windowSeconds],
+  );
+  const allowed = (result.rows[0]?.request_count ?? 0) <= limit;
+  if (!allowed)
+    await pool.query(
+      "INSERT INTO rate_limit_event(id,rule,route,request_id,person_id,workspace_id,subject_hash) VALUES($1,'workspace.history.delete',$2,$3,$4,$5,$6)",
+      [randomUUID(), route, requestId, personId, workspaceId, keyHash],
+    );
+  return allowed;
 }
 
 async function withDeadline<T>(
