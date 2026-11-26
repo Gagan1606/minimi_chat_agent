@@ -118,7 +118,7 @@ This plan turns [`SPEC.md`](SPEC.md) and [`DESIGN.md`](DESIGN.md) into deployabl
 - **Depends on:** M1, M2, M4, M7, M8.
 - **Wave:** 7.
 - **Parallel-safe with:** none. It intentionally modifies the same conversation/message/index/outbox lifecycle as M4, M7, and M8; it must land after workspace retrieval so no path can bypass deletion.
-- **Owns:** `src/modules/history/deletion/**`, `src/workers/deletion-cleanup/**`, `src/workers/retention/**`, `tests/deletion-retention/**`, deletion/recovery runbook sections. Writes/tombstones `Conversation`, `Message`, `Citation`, `EmbeddingOutbox`, and vector records; no unrelated feature code or changes to applied migrations.
+- **Owns:** `src/modules/history/personal/service.ts` (shared deletion operations), `src/modules/chat/workspace/routes.ts` (workspace deletion endpoints), `src/workers/deletion-cleanup/**`, `src/index.ts` (maintenance scheduling), `test/workspace-chat.integration.test.ts` and deletion/retention tests, and `docs/operations/deletion-retention.md`. Writes/tombstones `Conversation`, `Message`, `Citation`, `EmbeddingOutbox`, and vector records; no unrelated feature code or changes to applied migrations. Provider-specific encrypted backup configuration remains an environment/deployment responsibility.
 - **Contracts consumed / produced:** Consumes M2 deletion/retention and outbox contract plus M4/M7/M8 history behavior. Produces complete active-store and vector-store deletion semantics and operational retention evidence.
 
 ### M10 — Evaluation, load, recovery, and release hardening

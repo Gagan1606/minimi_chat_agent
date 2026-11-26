@@ -8,6 +8,7 @@ import { Pool } from "pg";
 import { runMigrations } from "../src/db/migrate.js";
 import { createWorkspaceHistoryRetriever } from "../src/modules/retrieval/workspace-scope/index.js";
 import { handleWorkspaceChatRoute } from "../src/modules/chat/workspace/routes.js";
+import { runDeletionCleanup } from "../src/workers/deletion-cleanup/index.js";
 
 const url =
   process.env.MIGRATION_DATABASE_URL ??
@@ -138,9 +139,76 @@ test("workspace retrieval returns same-workspace content only with identity-free
     body: JSON.stringify({ scope: "workspace", message: "Orion delivery" }),
   });
   assert.equal(success.status, 200);
-  assert.equal((await success.json()).answer, "safe team answer");
+  const successBody = (await success.json()) as {
+    answer: string;
+    conversationId: string;
+  };
+  assert.equal(successBody.answer, "safe team answer");
   assert.match(prompts[0]!, /Friday/);
   assert.doesNotMatch(prompts[0]!, new RegExp(person));
+  const remove = await fetch(
+    `${endpoint.replace(/\/chat$/, `/conversations/${successBody.conversationId}`)}`,
+    {
+      method: "DELETE",
+      headers: { cookie: `momos_session=${userToken}`, "x-csrf-token": csrf },
+    },
+  );
+  assert.equal(remove.status, 200);
+  const scrubbed = await pool.query<{
+    id: string;
+    status: string;
+    content: string;
+  }>("SELECT id,status,content FROM message WHERE conversation_id=$1", [
+    successBody.conversationId,
+  ]);
+  assert.equal(scrubbed.rowCount, 2);
+  assert.ok(
+    scrubbed.rows.every(
+      (row) => row.status === "deleted" && row.content === "[deleted]",
+    ),
+  );
+  assert.equal(
+    await pool
+      .query(
+        "SELECT id FROM embedding_outbox WHERE message_id=ANY($1::uuid[]) AND operation='delete'",
+        [scrubbed.rows.map((row) => row.id)],
+      )
+      .then((x) => x.rowCount),
+    2,
+  );
+  const deletedContext = await createWorkspaceHistoryRetriever({
+    pool,
+    embeddings: {
+      async embed() {
+        return [[1, 0, 0]];
+      },
+    },
+    vectorStore: {
+      async upsert() {},
+      async delete() {},
+      async search() {
+        return scrubbed.rows.map((row) => ({ id: row.id, score: 1 }));
+      },
+    },
+  }).retrieve({
+    workspaceId: workspace,
+    conversationId: randomUUID(),
+    query: "Orion",
+  });
+  assert.ok(deletedContext.every((item) => item.content !== "[deleted]"));
+  await pool.query(
+    "INSERT INTO idempotency_record(principal_id,scope,idempotency_key,request_hash,state,response_status,expires_at) VALUES($1,'workspace','expired-cleanup',$2,'completed',200,now()-interval '1 minute')",
+    [person, "0".repeat(64)],
+  );
+  assert.equal((await runDeletionCleanup(pool)).expiredIdempotencyRecords, 1);
+  assert.equal(
+    (
+      await pool.query(
+        "SELECT 1 FROM idempotency_record WHERE idempotency_key='expired-cleanup'",
+      )
+    ).rowCount,
+    0,
+  );
   const cross = await fetch(endpoint, {
     method: "POST",
     headers: {

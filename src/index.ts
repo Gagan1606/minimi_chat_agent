@@ -12,6 +12,7 @@ import { createQdrantVectorStore } from "./providers/vector-store/qdrant.js";
 import { createHybridHistoryRetriever } from "./modules/retrieval/history.js";
 import { createWorkspaceHistoryRetriever } from "./modules/retrieval/workspace-scope/index.js";
 import { createEmbeddingIndexer } from "./workers/embedding-indexer/index.js";
+import { runDeletionCleanup } from "./workers/deletion-cleanup/index.js";
 import type { MetricsPort } from "./shared/providers/contracts/index.js";
 
 async function start(): Promise<void> {
@@ -135,6 +136,22 @@ async function start(): Promise<void> {
       indexerTimer.unref();
       runIndexer();
     }
+    const cleanupTimer = setInterval(
+      () => {
+        void runDeletionCleanup(appPool!).catch(() => {
+          process.stderr.write(
+            '{"level":"error","event":"deletion_cleanup_failed"}\n',
+          );
+        });
+      },
+      60 * 60 * 1000,
+    );
+    cleanupTimer.unref();
+    void runDeletionCleanup(appPool).catch(() => {
+      process.stderr.write(
+        '{"level":"error","event":"deletion_cleanup_failed"}\n',
+      );
+    });
 
     const shutdown = (): void => {
       server.close(() => {

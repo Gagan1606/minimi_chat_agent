@@ -540,6 +540,12 @@ async function dispatch(
         : {}),
       sessionCookieName: config.sessionCookieName,
       modelTimeoutMs: positiveEnvironmentInteger("MODEL_TIMEOUT_MS", 10_000),
+      rateLimitSecret: featureSecret,
+      deleteLimit: positiveEnvironmentInteger("RATE_LIMIT_DELETE_MAX", 10),
+      deleteWindowSeconds: positiveEnvironmentInteger(
+        "RATE_LIMIT_DELETE_WINDOW_SECONDS",
+        3600,
+      ),
     };
     if (
       await handleWorkspaceChatRoute(request, response, url, requestId, {
