@@ -208,6 +208,28 @@ test("health route rejects unsupported methods", async () => {
   }
 });
 
+test("company admin page and script assets are served under the same-origin CSP", async () => {
+  const { server, baseUrl } = await listen();
+  try {
+    const page = await fetch(`${baseUrl}/company-admin`);
+    assert.equal(page.status, 200);
+    assert.match(page.headers.get("content-type") ?? "", /text\/html/);
+    assert.match(
+      page.headers.get("content-security-policy") ?? "",
+      /script-src 'self'/,
+    );
+    assert.match(await page.text(), /src="\.\/admin\.js"/);
+
+    const script = await fetch(`${baseUrl}/company-admin/admin.js`);
+    assert.equal(script.status, 200);
+    assert.match(script.headers.get("content-type") ?? "", /javascript/);
+    assert.match(await script.text(), /\/auth\/session/);
+  } finally {
+    server.close();
+    await once(server, "close");
+  }
+});
+
 test("OIDC start throttles after the configured IP limit and stores only a keyed hash", async () => {
   const { server, baseUrl, appConfig } = await listen();
   try {
@@ -239,9 +261,16 @@ test("OIDC start throttles after the configured IP limit and stores only a keyed
 });
 
 test("OIDC callback rejects missing state without creating a person or session", async () => {
-  const beforeCounts = await pool.query<{ people: string; sessions: string }>(
-    "SELECT (SELECT count(*) FROM person)::text AS people, (SELECT count(*) FROM session)::text AS sessions",
-  );
+  const identity = newIdentity();
+  const countForIdentity = () =>
+    pool.query<{ identities: string; sessions: string }>(
+      `SELECT
+         (SELECT count(*) FROM auth_identity WHERE issuer = $1 AND subject = $2)::text AS identities,
+         (SELECT count(*) FROM session s JOIN auth_identity i USING (person_id)
+          WHERE i.issuer = $1 AND i.subject = $2)::text AS sessions`,
+      [identity.issuer, identity.subject],
+    );
+  const beforeCounts = await countForIdentity();
   const { server, baseUrl } = await listen();
   try {
     const response = await fetch(
@@ -249,9 +278,7 @@ test("OIDC callback rejects missing state without creating a person or session",
       { redirect: "manual" },
     );
     assert.equal(response.status, 400);
-    const afterCounts = await pool.query<{ people: string; sessions: string }>(
-      "SELECT (SELECT count(*) FROM person)::text AS people, (SELECT count(*) FROM session)::text AS sessions",
-    );
+    const afterCounts = await countForIdentity();
     assert.deepEqual(afterCounts.rows, beforeCounts.rows);
   } finally {
     server.close();

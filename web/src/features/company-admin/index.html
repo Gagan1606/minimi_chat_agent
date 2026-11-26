@@ -1,0 +1,31 @@
+<link rel="stylesheet" href="./admin.css" />
+
+<section class="company-admin" aria-labelledby="company-admin-title">
+  <h1 id="company-admin-title">Company administration</h1>
+  <p>
+    Manage this company’s workspaces and member access. Transcript content and
+    detailed security events are not available here.
+  </p>
+  <form id="workspace-create">
+    <label>Workspace name <input name="name" maxlength="160" required /></label
+    ><button>Create workspace</button>
+  </form>
+  <form id="member-add">
+    <label>Person ID <input name="personId" required /></label
+    ><label>Workspace ID <input name="workspaceId" required /></label
+    ><button>Add member</button>
+  </form>
+  <form id="workspace-admin-assign">
+    <label>Workspace ID <input name="workspaceId" required /></label
+    ><label
+      >New Workspace Admin person ID <input name="personId" required /></label
+    ><button>Assign Workspace Admin</button>
+  </form>
+
+  <form id="company-admin-assign">
+    <label>New Company Admin person ID <input name="personId" required /></label
+    ><button>Assign Company Admin</button>
+  </form>
+  <p role="status" aria-live="polite" id="company-admin-status"></p>
+</section>
+<script type="module" src="./admin.js"></script>

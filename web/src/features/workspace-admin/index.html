@@ -1,0 +1,19 @@
+<link rel="stylesheet" href="./admin.css" />
+
+<section class="workspace-admin" aria-labelledby="workspace-admin-title">
+  <h1 id="workspace-admin-title">Workspace administration</h1>
+  <p>
+    Manage ordinary member access in this workspace. Workspace Admins cannot
+    appoint admins or view conversations and detailed security events.
+  </p>
+  <form id="member-add">
+    <label>Person ID <input name="personId" required /></label
+    ><button>Add member</button>
+  </form>
+  <form id="member-remove">
+    <label>Person ID <input name="personId" required /></label
+    ><button>Remove member</button>
+  </form>
+  <p role="status" aria-live="polite" id="workspace-admin-status"></p>
+</section>
+<script type="module" src="./admin.js"></script>
