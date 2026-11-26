@@ -207,6 +207,13 @@ async function cleanup(
       user.personId,
     ]);
     await pool.query(
+      `DELETE FROM embedding_outbox WHERE message_id IN (
+         SELECT m.id FROM message m JOIN conversation c ON c.id = m.conversation_id
+         WHERE c.owner_person_id = $1
+       )`,
+      [user.personId],
+    );
+    await pool.query(
       `DELETE FROM citation WHERE assistant_message_id IN (
          SELECT m.id FROM message m JOIN conversation c ON c.id = m.conversation_id
          WHERE c.owner_person_id = $1
@@ -377,6 +384,14 @@ test("personal chat persists an idempotent user/assistant turn", async (t) => {
       { role: "assistant", content: body.answer, status: "active" },
     ],
   );
+  const queuedForEmbedding = await pool.query<{ count: string }>(
+    `SELECT count(*)::text AS count FROM embedding_outbox
+     WHERE operation='upsert' AND message_id IN (
+       SELECT id FROM message WHERE conversation_id=$1
+     )`,
+    [body.conversationId],
+  );
+  assert.equal(queuedForEmbedding.rows[0]?.count, "2");
   const idempotency = await pool.query<{
     state: string;
     result_resource_id: string;

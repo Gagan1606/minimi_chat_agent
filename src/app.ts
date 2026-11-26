@@ -26,6 +26,7 @@ import {
   type AdminOperationsStatus,
 } from "./modules/admin/operations/routes.js";
 import type { SourcedAnswerProvider } from "./modules/chat/answers/service.js";
+import type { PersonalHistoryRetriever } from "./modules/retrieval/history.js";
 
 export interface AppConfig {
   appBaseUrl: string;
@@ -49,6 +50,7 @@ export interface AppDependencies {
   config: AppConfig;
   model?: ModelProvider;
   answerProvider?: SourcedAnswerProvider;
+  historyRetriever?: PersonalHistoryRetriever;
   adminStatus?: AdminOperationsStatus;
 }
 
@@ -535,6 +537,9 @@ async function dispatch(
         model: dependencies.model,
         ...(dependencies.answerProvider
           ? { answerProvider: dependencies.answerProvider }
+          : {}),
+        ...(dependencies.historyRetriever
+          ? { historyRetriever: dependencies.historyRetriever }
           : {}),
         sessionCookieName: config.sessionCookieName,
         cursorSigningSecret: featureSecret,
