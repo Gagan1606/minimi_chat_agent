@@ -4,7 +4,9 @@ import { loadConfig } from "./config/env.js";
 import { runMigrations } from "./db/migrate.js";
 import { createPool } from "./db/pool.js";
 import { createOidcAdapter } from "./modules/auth/oidc.js";
+import { createSourcedAnswerProvider } from "./modules/chat/answers/service.js";
 import { createGeminiModel } from "./providers/gemini.js";
+import { createTavilyWebSearch } from "./providers/tavily.js";
 
 async function start(): Promise<void> {
   let appPool: ReturnType<typeof createPool> | undefined;
@@ -29,7 +31,15 @@ async function start(): Promise<void> {
       clientSecret: config.oidcClientSecret,
     });
     const model = createGeminiModel(process.env);
-    const server = createAppServer({ pool: appPool, oidc, config, model });
+    const search = createTavilyWebSearch(process.env);
+    const answerProvider = createSourcedAnswerProvider({ model, search });
+    const server = createAppServer({
+      pool: appPool,
+      oidc,
+      config,
+      model,
+      answerProvider,
+    });
     server.once("error", () => {
       process.stderr.write('{"level":"error","event":"server_bind_failed"}\n');
       process.exitCode = 1;

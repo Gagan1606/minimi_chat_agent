@@ -10,6 +10,7 @@ import test, {
 } from "node:test";
 import { createAppServer } from "../src/app.js";
 import type { OidcAdapter } from "../src/modules/auth/oidc.js";
+import type { SourcedAnswerProvider } from "../src/modules/chat/answers/service.js";
 import type { ModelProvider } from "../src/providers/types.js";
 import { handlePersonalChatRoute } from "../src/modules/chat/personal/routes.js";
 import type { PersonalChatDependencies } from "../src/modules/chat/personal/types.js";
@@ -81,6 +82,7 @@ async function setup(
     readLimit?: number;
     deleteLimit?: number;
     modelTimeoutMs?: number;
+    answerProvider?: SourcedAnswerProvider;
   } = {},
 ): Promise<TestContext> {
   const model = new TestModel();
@@ -98,6 +100,9 @@ async function setup(
     readWindowSeconds: 60,
     deleteLimit: options.deleteLimit ?? 10,
     deleteWindowSeconds: 3_600,
+    ...(options.answerProvider
+      ? { answerProvider: options.answerProvider }
+      : {}),
   };
   const server = createServer((request, response) => {
     const requestId = randomUUID();
@@ -394,6 +399,63 @@ test("personal chat persists an idempotent user/assistant turn", async (t) => {
   );
   assert.equal(count.rows[0]?.count, "2");
   assert.equal(context.model.prompts.length, 1);
+});
+
+test("current answers persist citations and replay/history return the same sources", async (t) => {
+  const answerProvider: SourcedAnswerProvider = {
+    async answer({ question }) {
+      assert.match(question, /latest/i);
+      return {
+        answer: "A sourced current answer.",
+        citations: [
+          {
+            title: "Official release notes",
+            url: "https://example.test/releases",
+            accessedAt: "2026-11-26T12:00:00.000Z",
+            publishedAt: "2026-11-20T00:00:00.000Z",
+          },
+        ],
+      };
+    },
+  };
+  const context = await setup(t, { answerProvider });
+  const user = await context.addUser();
+  const payload = { scope: "personal", message: "What is the latest release?" };
+  const key = randomUUID();
+
+  const response = await postChat(context, user, payload, key);
+  assert.equal(response.status, 200);
+  const created = (await response.json()) as {
+    conversationId: string;
+    messageId: string;
+    citations: Array<{ url: string; accessedAt: string; publishedAt: string }>;
+  };
+  assert.equal(created.citations[0]?.url, "https://example.test/releases");
+
+  const saved = await pool.query<{ count: string }>(
+    "SELECT count(*)::text AS count FROM citation WHERE assistant_message_id = $1",
+    [created.messageId],
+  );
+  assert.equal(saved.rows[0]?.count, "1");
+
+  const replay = await postChat(context, user, payload, key);
+  assert.equal(replay.status, 200);
+  assert.deepEqual((await replay.json()).citations, created.citations);
+
+  const detail = await fetch(
+    `${context.baseUrl}/api/v1/conversations/${created.conversationId}`,
+    { headers: context.headers(user) },
+  );
+  assert.equal(detail.status, 200);
+  const messages = (await detail.json()).messages as Array<{
+    id: string;
+    citations: Array<{ url: string }>;
+  }>;
+  assert.equal(
+    messages.find((message) => message.id === created.messageId)?.citations[0]
+      ?.url,
+    "https://example.test/releases",
+  );
 });
 
 test("chat rejects invalid payloads, workspace scope, unauthenticated callers, and foreign conversations", async (t) => {
