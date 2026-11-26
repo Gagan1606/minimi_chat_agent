@@ -224,6 +224,19 @@ test("company admin page and script assets are served under the same-origin CSP"
     assert.equal(script.status, 200);
     assert.match(script.headers.get("content-type") ?? "", /javascript/);
     assert.match(await script.text(), /\/auth\/session/);
+
+    const chatPage = await fetch(`${baseUrl}/personal-chat`);
+    assert.equal(chatPage.status, 200);
+    assert.match(await chatPage.text(), /src="\.\/personal-chat\.js"/);
+    const chatScript = await fetch(`${baseUrl}/personal-chat/personal-chat.js`);
+    assert.equal(chatScript.status, 200);
+
+    const adminApi = await fetch(`${baseUrl}/api/v1/platform/companies`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    assert.equal(adminApi.status, 401);
   } finally {
     server.close();
     await once(server, "close");

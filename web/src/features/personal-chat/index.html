@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Personal chat · Momos</title>
+    <link rel="stylesheet" href="./personal-chat.css" />
+  </head>
+  <body>
+    <main class="shell" aria-label="Personal chat">
+      <aside class="history" aria-label="Personal chat history">
+        <div class="brand">Momos</div>
+        <button class="new-chat" id="new-chat" type="button">
+          ＋ New chat
+        </button>
+        <h2>Recent</h2>
+        <nav id="conversation-list" aria-label="Conversations"></nav>
+        <button class="delete-history" id="delete-history" type="button">
+          Delete all history
+        </button>
+      </aside>
+      <section class="chat-panel" aria-labelledby="chat-title">
+        <header class="chat-header">
+          <div>
+            <h1 id="chat-title">Personal chat</h1>
+            <p>Your conversations are private to you.</p>
+          </div>
+          <button
+            class="delete-current"
+            id="delete-current"
+            type="button"
+            hidden
+          >
+            Delete chat
+          </button>
+        </header>
+        <ol
+          class="messages"
+          id="messages"
+          aria-live="polite"
+          aria-label="Messages"
+        ></ol>
+        <form id="composer">
+          <label class="sr-only" for="prompt">Ask a question</label>
+          <textarea
+            id="prompt"
+            name="prompt"
+            maxlength="10000"
+            rows="2"
+            required
+            placeholder="Ask anything"
+          ></textarea>
+          <div class="composer-footer">
+            <span id="status" role="status"></span
+            ><button id="send" type="submit">Send</button>
+          </div>
+        </form>
+      </section>
+    </main>
+    <script type="module" src="./personal-chat.js"></script>
+  </body>
+</html>

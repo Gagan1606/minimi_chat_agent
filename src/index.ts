@@ -4,6 +4,7 @@ import { loadConfig } from "./config/env.js";
 import { runMigrations } from "./db/migrate.js";
 import { createPool } from "./db/pool.js";
 import { createOidcAdapter } from "./modules/auth/oidc.js";
+import { createGeminiModel } from "./providers/gemini.js";
 
 async function start(): Promise<void> {
   let appPool: ReturnType<typeof createPool> | undefined;
@@ -27,7 +28,8 @@ async function start(): Promise<void> {
       clientId: config.oidcClientId,
       clientSecret: config.oidcClientSecret,
     });
-    const server = createAppServer({ pool: appPool, oidc, config });
+    const model = createGeminiModel(process.env);
+    const server = createAppServer({ pool: appPool, oidc, config, model });
     server.once("error", () => {
       process.stderr.write('{"level":"error","event":"server_bind_failed"}\n');
       process.exitCode = 1;
