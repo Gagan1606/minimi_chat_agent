@@ -1,0 +1,69 @@
+<link rel="stylesheet" href="./admin.css" />
+
+<section class="workspace-admin" aria-labelledby="workspace-admin-title">
+  <h1 id="workspace-admin-title">Workspace administration</h1>
+  <p>
+    Manage ordinary member access in this workspace. Workspace Admins cannot
+    appoint admins or view conversations and detailed security events.
+  </p>
+  <form id="member-add">
+    <label>Person ID <input name="personId" required /></label
+    ><button>Add member</button>
+  </form>
+  <form id="member-remove">
+    <label>Person ID <input name="personId" required /></label
+    ><button>Remove member</button>
+  </form>
+  <p role="status" aria-live="polite" id="workspace-admin-status"></p>
+</section>
+<script type="module">
+  const workspaceId = new URLSearchParams(location.search).get("workspaceId");
+  const status = document.querySelector("#workspace-admin-status");
+  const send = async (path, method, body) => {
+    const response = await fetch(path, {
+      method,
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json",
+        "x-csrf-token":
+          document.querySelector('meta[name="csrf-token"]')?.content ?? "",
+        ...(method === "POST"
+          ? { "idempotency-key": crypto.randomUUID() }
+          : {}),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message ?? "Request failed");
+    return data;
+  };
+  document
+    .querySelector("#member-add")
+    .addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const personId = new FormData(event.currentTarget).get("personId");
+        await send(`/api/v1/workspaces/${workspaceId}/members`, "POST", {
+          personId,
+        });
+        status.textContent = "Member added.";
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+  document
+    .querySelector("#member-remove")
+    .addEventListener("submit", async (event) => {
+      event.preventDefault();
+      try {
+        const personId = new FormData(event.currentTarget).get("personId");
+        await send(
+          `/api/v1/workspaces/${workspaceId}/members/${encodeURIComponent(personId)}`,
+          "DELETE",
+        );
+        status.textContent = "Member removed.";
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+</script>
