@@ -105,22 +105,26 @@ export function createEmbeddingIndexer(options: {
 
   async function recordLag(): Promise<void> {
     if (!options.metrics) return;
-    const result = await options.pool.query<{
-      count: string;
-      oldest_seconds: number | null;
-    }>(
-      `SELECT count(*)::text AS count,
+    try {
+      const result = await options.pool.query<{
+        count: string;
+        oldest_seconds: number | null;
+      }>(
+        `SELECT count(*)::text AS count,
          COALESCE(EXTRACT(epoch FROM now()-min(created_at)),0)::float8 AS oldest_seconds
        FROM embedding_outbox WHERE state IN ('pending','failed')`,
-    );
-    options.metrics.gauge(
-      "embedding_indexer_lag_messages",
-      Number(result.rows[0]?.count ?? 0),
-    );
-    options.metrics.gauge(
-      "embedding_indexer_oldest_lag_seconds",
-      result.rows[0]?.oldest_seconds ?? 0,
-    );
+      );
+      options.metrics.gauge(
+        "embedding_indexer_lag_messages",
+        Number(result.rows[0]?.count ?? 0),
+      );
+      options.metrics.gauge(
+        "embedding_indexer_oldest_lag_seconds",
+        result.rows[0]?.oldest_seconds ?? 0,
+      );
+    } catch {
+      // Telemetry failures must not change the outbox operation result.
+    }
   }
 
   return {
