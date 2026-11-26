@@ -8,6 +8,8 @@ import test, {
   before,
   type TestContext as NodeTestContext,
 } from "node:test";
+import { createAppServer } from "../src/app.js";
+import type { OidcAdapter } from "../src/modules/auth/oidc.js";
 import type { ModelProvider } from "../src/providers/types.js";
 import { handlePersonalChatRoute } from "../src/modules/chat/personal/routes.js";
 import type { PersonalChatDependencies } from "../src/modules/chat/personal/types.js";
@@ -285,6 +287,53 @@ function getError(body: unknown): {
   assert.match(error.requestId, /^[0-9a-f-]{36}$/i);
   return error;
 }
+
+test("app dispatch mounts authenticated personal conversation routes", async (t) => {
+  const context = await setup(t);
+  const user = await context.addUser();
+  const config = {
+    appBaseUrl,
+    oidcRedirectUri: `${appBaseUrl}/auth/oidc/callback`,
+    oidcScopes: ["openid", "profile", "email"],
+    oidcClientSecret: "m4-app-integration-test-secret",
+    sessionCookieName: context.deps.sessionCookieName,
+    oidcTransactionCookieName: "momos_oidc_transaction",
+    sessionCookieSecure: false,
+    sessionIdleTimeoutSeconds: 3600,
+    sessionAbsoluteTimeoutSeconds: 86400,
+    platformAdminBootstrap: {
+      issuer: "https://m4-test.example/issuer",
+      subject: "unused-platform-admin",
+    },
+    oidcStartMax: 10,
+    oidcStartWindowSeconds: 900,
+  };
+  const oidc: OidcAdapter = {
+    begin: async () => new URL("https://m4-test.example/authorize"),
+    complete: async () => ({
+      issuer: "https://m4-test.example/issuer",
+      subject: "unused-subject",
+      amr: ["pwd"],
+    }),
+  };
+  const app = createAppServer({ pool, oidc, config, model: context.model });
+  app.listen(0, "127.0.0.1");
+  await once(app, "listening");
+  const address = app.address();
+  assert.ok(address && typeof address !== "string");
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/v1/conversations?scope=personal&limit=50`,
+      { headers: context.headers(user) },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).items, []);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      app.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
 
 test("personal chat persists an idempotent user/assistant turn", async (t) => {
   const context = await setup(t);

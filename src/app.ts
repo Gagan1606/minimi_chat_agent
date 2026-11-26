@@ -19,6 +19,8 @@ import { createRequestTraceContext } from "./observability/trace-context.js";
 import { recordRequestMetric } from "./observability/request-metrics.js";
 import type { OidcAdapter, OidcIdentity } from "./modules/auth/oidc.js";
 import { createTenancyHandler } from "./modules/tenancy/routes.js";
+import { handlePersonalChatRoute } from "./modules/chat/personal/routes.js";
+import type { ModelProvider } from "./providers/types.js";
 
 export interface AppConfig {
   appBaseUrl: string;
@@ -40,6 +42,7 @@ export interface AppDependencies {
   pool: Pool;
   oidc: OidcAdapter;
   config: AppConfig;
+  model?: ModelProvider;
 }
 
 interface OidcTransaction {
@@ -496,6 +499,42 @@ async function dispatch(
 
   if (await serveFeatureAsset(path, response, requestId)) return;
   if (await tenancyHandler(request, response, requestId)) return;
+  if (dependencies.model) {
+    const featureSecret = createHash("sha256")
+      .update(`${config.oidcClientSecret}:feature-signing`)
+      .digest("hex");
+    const handled = await handlePersonalChatRoute(
+      request,
+      response,
+      url,
+      requestId,
+      {
+        pool,
+        model: dependencies.model,
+        sessionCookieName: config.sessionCookieName,
+        cursorSigningSecret: featureSecret,
+        rateLimitSecret: featureSecret,
+        sessionCookieSecure: config.sessionCookieSecure,
+        modelTimeoutMs: positiveEnvironmentInteger("MODEL_TIMEOUT_MS", 10_000),
+        chatLimit: positiveEnvironmentInteger("RATE_LIMIT_CHAT_MAX", 30),
+        chatWindowSeconds: positiveEnvironmentInteger(
+          "RATE_LIMIT_CHAT_WINDOW_SECONDS",
+          60,
+        ),
+        readLimit: positiveEnvironmentInteger("RATE_LIMIT_READ_MAX", 120),
+        readWindowSeconds: positiveEnvironmentInteger(
+          "RATE_LIMIT_READ_WINDOW_SECONDS",
+          60,
+        ),
+        deleteLimit: positiveEnvironmentInteger("RATE_LIMIT_DELETE_MAX", 10),
+        deleteWindowSeconds: positiveEnvironmentInteger(
+          "RATE_LIMIT_DELETE_WINDOW_SECONDS",
+          3600,
+        ),
+      },
+    );
+    if (handled) return;
+  }
 
   sendError(response, 404, "NOT_FOUND", "Route not found", requestId, false);
 }
@@ -530,6 +569,18 @@ async function serveFeatureAsset(
       "web/src/features/workspace-admin/admin.js",
       "text/javascript; charset=utf-8",
     ],
+    "/personal-chat": [
+      "web/src/features/personal-chat/index.html",
+      "text/html; charset=utf-8",
+    ],
+    "/personal-chat/personal-chat.css": [
+      "web/src/features/personal-chat/personal-chat.css",
+      "text/css; charset=utf-8",
+    ],
+    "/personal-chat/personal-chat.js": [
+      "web/src/features/personal-chat/personal-chat.js",
+      "text/javascript; charset=utf-8",
+    ],
   };
   const asset = assets[path];
   if (!asset) return false;
@@ -551,6 +602,13 @@ async function serveFeatureAsset(
     );
   }
   return true;
+}
+
+function positiveEnvironmentInteger(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw?.trim()) return fallback;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
 }
 
 async function consumeOidcTransaction(
