@@ -19,6 +19,14 @@ import { createRequestTraceContext } from "./observability/trace-context.js";
 import { recordRequestMetric } from "./observability/request-metrics.js";
 import type { OidcAdapter, OidcIdentity } from "./modules/auth/oidc.js";
 import { createTenancyHandler } from "./modules/tenancy/routes.js";
+import { handlePersonalChatRoute } from "./modules/chat/personal/routes.js";
+import type { ModelProvider } from "./providers/types.js";
+import {
+  createAdminOperationsHandler,
+  type AdminOperationsStatus,
+} from "./modules/admin/operations/routes.js";
+import type { SourcedAnswerProvider } from "./modules/chat/answers/service.js";
+import type { PersonalHistoryRetriever } from "./modules/retrieval/history.js";
 
 export interface AppConfig {
   appBaseUrl: string;
@@ -40,6 +48,10 @@ export interface AppDependencies {
   pool: Pool;
   oidc: OidcAdapter;
   config: AppConfig;
+  model?: ModelProvider;
+  answerProvider?: SourcedAnswerProvider;
+  historyRetriever?: PersonalHistoryRetriever;
+  adminStatus?: AdminOperationsStatus;
 }
 
 interface OidcTransaction {
@@ -60,6 +72,18 @@ export function createAppServer(dependencies: AppDependencies): Server {
     pool: dependencies.pool,
     sessionCookieName: config.sessionCookieName,
     rateLimitSecret: featureSecret,
+  });
+  const adminOperationsHandler = createAdminOperationsHandler({
+    pool: dependencies.pool,
+    sessionCookieName: config.sessionCookieName,
+    cursorSigningSecret: featureSecret,
+    status: dependencies.adminStatus ?? {
+      model: "not_configured",
+      webSearch: "not_configured",
+      embeddings: "not_configured",
+      vectorStore: "not_configured",
+      backup: "not_reported",
+    },
   });
   return createServer((request, response) => {
     const requestId = randomUUID();
@@ -84,6 +108,7 @@ export function createAppServer(dependencies: AppDependencies): Server {
       requestId,
       dependencies,
       tenancyHandler,
+      adminOperationsHandler,
     )
       .catch(() => {
         if (!response.headersSent) {
@@ -133,6 +158,7 @@ async function dispatch(
   requestId: string,
   dependencies: AppDependencies,
   tenancyHandler: ReturnType<typeof createTenancyHandler>,
+  adminOperationsHandler: ReturnType<typeof createAdminOperationsHandler>,
 ): Promise<void> {
   const { pool, oidc, config } = dependencies;
   const path = url.pathname;
@@ -496,6 +522,49 @@ async function dispatch(
 
   if (await serveFeatureAsset(path, response, requestId)) return;
   if (await tenancyHandler(request, response, requestId)) return;
+  if (await adminOperationsHandler(request, response, url, requestId)) return;
+  if (dependencies.model) {
+    const featureSecret = createHash("sha256")
+      .update(`${config.oidcClientSecret}:feature-signing`)
+      .digest("hex");
+    const handled = await handlePersonalChatRoute(
+      request,
+      response,
+      url,
+      requestId,
+      {
+        pool,
+        model: dependencies.model,
+        ...(dependencies.answerProvider
+          ? { answerProvider: dependencies.answerProvider }
+          : {}),
+        ...(dependencies.historyRetriever
+          ? { historyRetriever: dependencies.historyRetriever }
+          : {}),
+        sessionCookieName: config.sessionCookieName,
+        cursorSigningSecret: featureSecret,
+        rateLimitSecret: featureSecret,
+        sessionCookieSecure: config.sessionCookieSecure,
+        modelTimeoutMs: positiveEnvironmentInteger("MODEL_TIMEOUT_MS", 10_000),
+        chatLimit: positiveEnvironmentInteger("RATE_LIMIT_CHAT_MAX", 30),
+        chatWindowSeconds: positiveEnvironmentInteger(
+          "RATE_LIMIT_CHAT_WINDOW_SECONDS",
+          60,
+        ),
+        readLimit: positiveEnvironmentInteger("RATE_LIMIT_READ_MAX", 120),
+        readWindowSeconds: positiveEnvironmentInteger(
+          "RATE_LIMIT_READ_WINDOW_SECONDS",
+          60,
+        ),
+        deleteLimit: positiveEnvironmentInteger("RATE_LIMIT_DELETE_MAX", 10),
+        deleteWindowSeconds: positiveEnvironmentInteger(
+          "RATE_LIMIT_DELETE_WINDOW_SECONDS",
+          3600,
+        ),
+      },
+    );
+    if (handled) return;
+  }
 
   sendError(response, 404, "NOT_FOUND", "Route not found", requestId, false);
 }
@@ -530,6 +599,38 @@ async function serveFeatureAsset(
       "web/src/features/workspace-admin/admin.js",
       "text/javascript; charset=utf-8",
     ],
+    "/personal-chat": [
+      "web/src/features/personal-chat/index.html",
+      "text/html; charset=utf-8",
+    ],
+    "/personal-chat/personal-chat.css": [
+      "web/src/features/personal-chat/personal-chat.css",
+      "text/css; charset=utf-8",
+    ],
+    "/personal-chat/personal-chat.js": [
+      "web/src/features/personal-chat/personal-chat.js",
+      "text/javascript; charset=utf-8",
+    ],
+    "/admin/platform": [
+      "web/src/features/admin/platform.html",
+      "text/html; charset=utf-8",
+    ],
+    "/admin/company": [
+      "web/src/features/admin/company.html",
+      "text/html; charset=utf-8",
+    ],
+    "/admin/workspace": [
+      "web/src/features/admin/workspace.html",
+      "text/html; charset=utf-8",
+    ],
+    "/admin/admin.css": [
+      "web/src/features/admin/admin.css",
+      "text/css; charset=utf-8",
+    ],
+    "/admin/admin.js": [
+      "web/src/features/admin/admin.js",
+      "text/javascript; charset=utf-8",
+    ],
   };
   const asset = assets[path];
   if (!asset) return false;
@@ -551,6 +652,13 @@ async function serveFeatureAsset(
     );
   }
   return true;
+}
+
+function positiveEnvironmentInteger(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw?.trim()) return fallback;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
 }
 
 async function consumeOidcTransaction(

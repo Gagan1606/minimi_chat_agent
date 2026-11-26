@@ -95,7 +95,7 @@ test("M2 migration upgrades an M1 schema without losing identity/session data", 
     person_count: "1",
     identity_count: "1",
     session_count: "1",
-    migration_count: "2",
+    migration_count: "3",
   });
 
   const tables = await upgradePool.query<{ table_name: string }>(
