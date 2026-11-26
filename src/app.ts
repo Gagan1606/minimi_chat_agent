@@ -21,6 +21,10 @@ import type { OidcAdapter, OidcIdentity } from "./modules/auth/oidc.js";
 import { createTenancyHandler } from "./modules/tenancy/routes.js";
 import { handlePersonalChatRoute } from "./modules/chat/personal/routes.js";
 import type { ModelProvider } from "./providers/types.js";
+import {
+  createAdminOperationsHandler,
+  type AdminOperationsStatus,
+} from "./modules/admin/operations/routes.js";
 import type { SourcedAnswerProvider } from "./modules/chat/answers/service.js";
 
 export interface AppConfig {
@@ -45,6 +49,7 @@ export interface AppDependencies {
   config: AppConfig;
   model?: ModelProvider;
   answerProvider?: SourcedAnswerProvider;
+  adminStatus?: AdminOperationsStatus;
 }
 
 interface OidcTransaction {
@@ -65,6 +70,18 @@ export function createAppServer(dependencies: AppDependencies): Server {
     pool: dependencies.pool,
     sessionCookieName: config.sessionCookieName,
     rateLimitSecret: featureSecret,
+  });
+  const adminOperationsHandler = createAdminOperationsHandler({
+    pool: dependencies.pool,
+    sessionCookieName: config.sessionCookieName,
+    cursorSigningSecret: featureSecret,
+    status: dependencies.adminStatus ?? {
+      model: "not_configured",
+      webSearch: "not_configured",
+      embeddings: "not_configured",
+      vectorStore: "not_configured",
+      backup: "not_reported",
+    },
   });
   return createServer((request, response) => {
     const requestId = randomUUID();
@@ -89,6 +106,7 @@ export function createAppServer(dependencies: AppDependencies): Server {
       requestId,
       dependencies,
       tenancyHandler,
+      adminOperationsHandler,
     )
       .catch(() => {
         if (!response.headersSent) {
@@ -138,6 +156,7 @@ async function dispatch(
   requestId: string,
   dependencies: AppDependencies,
   tenancyHandler: ReturnType<typeof createTenancyHandler>,
+  adminOperationsHandler: ReturnType<typeof createAdminOperationsHandler>,
 ): Promise<void> {
   const { pool, oidc, config } = dependencies;
   const path = url.pathname;
@@ -501,6 +520,7 @@ async function dispatch(
 
   if (await serveFeatureAsset(path, response, requestId)) return;
   if (await tenancyHandler(request, response, requestId)) return;
+  if (await adminOperationsHandler(request, response, url, requestId)) return;
   if (dependencies.model) {
     const featureSecret = createHash("sha256")
       .update(`${config.oidcClientSecret}:feature-signing`)
@@ -584,6 +604,26 @@ async function serveFeatureAsset(
     ],
     "/personal-chat/personal-chat.js": [
       "web/src/features/personal-chat/personal-chat.js",
+      "text/javascript; charset=utf-8",
+    ],
+    "/admin/platform": [
+      "web/src/features/admin/platform.html",
+      "text/html; charset=utf-8",
+    ],
+    "/admin/company": [
+      "web/src/features/admin/company.html",
+      "text/html; charset=utf-8",
+    ],
+    "/admin/workspace": [
+      "web/src/features/admin/workspace.html",
+      "text/html; charset=utf-8",
+    ],
+    "/admin/admin.css": [
+      "web/src/features/admin/admin.css",
+      "text/css; charset=utf-8",
+    ],
+    "/admin/admin.js": [
+      "web/src/features/admin/admin.js",
       "text/javascript; charset=utf-8",
     ],
   };

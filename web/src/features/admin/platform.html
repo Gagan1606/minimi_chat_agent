@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Platform operations · Momos</title>
+    <link rel="stylesheet" href="./admin.css" />
+  </head>
+  <body data-view="platform">
+    <main>
+      <header>
+        <p class="eyebrow">Momos · Operations</p>
+        <h1>Platform operations</h1>
+        <p>
+          Service health, provider configuration, and content-free operational
+          events.
+        </p>
+      </header>
+      <section aria-labelledby="overview-heading">
+        <h2 id="overview-heading">Overview</h2>
+        <pre id="overview" aria-live="polite">Loading…</pre>
+      </section>
+      <section aria-labelledby="events-heading">
+        <h2 id="events-heading">Rate-limit events</h2>
+        <ul id="events" aria-live="polite"></ul>
+      </section>
+      <p id="status" role="status"></p>
+    </main>
+    <script type="module" src="./admin.js"></script>
+  </body>
+</html>

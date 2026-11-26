@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Company administration · Momos</title>
+    <link rel="stylesheet" href="./admin.css" />
+  </head>
+  <body data-view="company">
+    <main>
+      <header>
+        <p class="eyebrow">Momos · Administration</p>
+        <h1>Company overview</h1>
+        <p>Company and workspace status with aggregate usage only.</p>
+      </header>
+      <section aria-labelledby="overview-heading">
+        <h2 id="overview-heading">Overview</h2>
+        <pre id="overview" aria-live="polite">Loading…</pre>
+      </section>
+      <p id="status" role="status"></p>
+    </main>
+    <script type="module" src="./admin.js"></script>
+  </body>
+</html>
